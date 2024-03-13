@@ -1,3 +1,4 @@
+import { connect, Connection, Channel } from 'amqplib';
 import {
   SubscribeMessage,
   WebSocketGateway,
@@ -8,7 +9,7 @@ import {
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
-import { MessageDto } from './dto/message.dto';
+import { ChatDto } from './dto/chat.dto';
 
 @WebSocketGateway(4001, { cors: { origin: '*' } })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -16,15 +17,48 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server;
 
   private logger: Logger = new Logger('ChatGateway');
+  private connection: Connection;
+  private channel: Channel;
+
+  constructor() {
+    this.init();
+  }
+
+  async init() {
+    this.connection = await connect('amqp://localhost');
+    this.channel = await this.connection.createChannel();
+    this.channel.assertQueue('chat');
+    this.channel.consume('chat', (msg) => {
+      if (msg) {
+        const chat = JSON.parse(msg.content.toString());
+        this.server.emit('chat', chat);
+      }
+    });
+  }
 
   setLogger(logger: Logger) {
     this.logger = logger;
   }
 
+  setChannel(channel: Channel) {
+    this.channel = channel;
+  }
+
+  getConnection() {
+    return this.connection;
+  }
+
+  getChannel() {
+    return this.channel;
+  }
+
+  getLogger() {
+    return this.logger;
+  }
+
   @SubscribeMessage('chat')
-  handleMessage(@MessageBody() payload: MessageDto): MessageDto {
-    this.logger.log(`Chat: ${payload.author} - ${payload.body}`);
-    this.server.emit('chat', payload);
+  handleMessage(@MessageBody() payload: ChatDto): ChatDto {
+    this.channel.sendToQueue('chat', Buffer.from(JSON.stringify(payload)));
     return payload;
   }
 
@@ -34,5 +68,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
+  }
+
+  async disconnect() {
+    if (this.channel) {
+      await this.channel.close();
+    }
+    if (this.connection) {
+      await this.connection.close();
+    }
   }
 }
