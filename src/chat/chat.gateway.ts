@@ -3,13 +3,15 @@ import {
   WebSocketGateway,
   WebSocketServer,
   MessageBody,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { MessageDto } from './dto/message.dto';
 
-@WebSocketGateway({ cors: { origin: '*' } })
-export class ChatGateway {
+@WebSocketGateway(4001, { cors: { origin: '*' } })
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
@@ -19,10 +21,10 @@ export class ChatGateway {
     this.logger = logger;
   }
 
-  @SubscribeMessage('message')
+  @SubscribeMessage('chat')
   handleMessage(@MessageBody() payload: MessageDto): MessageDto {
-    this.logger.log(`Message: ${payload.author} - ${payload.body}`);
-    this.server.emit('message', payload);
+    this.logger.log(`Chat: ${payload.author} - ${payload.body}`);
+    this.server.emit('chat', payload);
     return payload;
   }
 
